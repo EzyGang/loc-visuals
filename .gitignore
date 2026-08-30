@@ -1,0 +1,4 @@
+bin/
+loc-report.html
+.playwright-cli/
+loc-report-*.png
