@@ -12,7 +12,7 @@ The generated report has no external assets or network dependencies. Open it loc
 ### Linux and macOS
 
 ```sh
-curl -fsSL https://github.com/EzyGang/loc-visuals/releases/latest/download/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/EzyGang/loc-visuals/main/scripts/install.sh | sh
 ```
 
 The installer selects the current operating system and architecture, verifies the release checksum, and installs the binary to `~/.local/bin` by default.
@@ -20,19 +20,19 @@ The installer selects the current operating system and architecture, verifies th
 Set `LOC_VISUALS_VERSION` to install a specific release or `LOC_VISUALS_INSTALL_DIR` to change the destination:
 
 ```sh
-curl -fsSL https://github.com/EzyGang/loc-visuals/releases/latest/download/install.sh | LOC_VISUALS_VERSION=0.1.0 LOC_VISUALS_INSTALL_DIR="$HOME/bin" sh
+curl -fsSL https://raw.githubusercontent.com/EzyGang/loc-visuals/main/scripts/install.sh | LOC_VISUALS_VERSION=0.1.1 LOC_VISUALS_INSTALL_DIR="$HOME/bin" sh
 ```
 
 ### Windows
 
 ```powershell
-irm https://github.com/EzyGang/loc-visuals/releases/latest/download/install.ps1 | iex
+irm https://raw.githubusercontent.com/EzyGang/loc-visuals/main/scripts/install.ps1 | iex
 ```
 
 The PowerShell installer verifies the release checksum, installs to `%LOCALAPPDATA%\Programs\loc-visuals\bin`, and adds that directory to the user `PATH` when needed.
 
 ```powershell
-$env:LOC_VISUALS_VERSION="0.1.0"; $env:LOC_VISUALS_INSTALL_DIR="$HOME\bin"; irm https://github.com/EzyGang/loc-visuals/releases/latest/download/install.ps1 | iex
+$env:LOC_VISUALS_VERSION="0.1.1"; $env:LOC_VISUALS_INSTALL_DIR="$HOME\bin"; irm https://raw.githubusercontent.com/EzyGang/loc-visuals/main/scripts/install.ps1 | iex
 ```
 
 ### Build from source
