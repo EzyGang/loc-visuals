@@ -1,6 +1,6 @@
 param(
     [string]$Version = $(if ($env:LOC_VISUALS_VERSION) { $env:LOC_VISUALS_VERSION } else { "latest" }),
-    [string]$InstallDir = $(if ($env:LOC_VISUALS_INSTALL_DIR) { $env:LOC_VISUALS_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\loc-visuals\bin" })
+    [string]$InstallDir = $(if ($env:LOC_VISUALS_INSTALL_DIR) { $env:LOC_VISUALS_INSTALL_DIR } else { Join-Path $env:USERPROFILE ".local\bin" })
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,11 +71,16 @@ try {
     Copy-Item -Path $binary -Destination (Join-Path $InstallDir "loc-visuals.exe") -Force
 
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $pathEntries = if ($userPath) { $userPath -split ';' } else { @() }
-    if ($pathEntries -notcontains $InstallDir) {
-        $newPath = if ($userPath) { "$userPath;$InstallDir" } else { $InstallDir }
-        [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-        $env:Path = "$env:Path;$InstallDir"
+    $userPathEntries = if ($userPath) { $userPath -split ';' } else { @() }
+    if ($userPathEntries -notcontains $InstallDir) {
+        $newUserPath = if ($userPath) { "$userPath;$InstallDir" } else { $InstallDir }
+        [Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+        Write-Output "Added $InstallDir to the user PATH"
+    }
+
+    $processPathEntries = if ($env:Path) { $env:Path -split ';' } else { @() }
+    if ($processPathEntries -notcontains $InstallDir) {
+        $env:Path = if ($env:Path) { "$env:Path;$InstallDir" } else { $InstallDir }
     }
 
     Write-Output "Installed loc-visuals $Version to $InstallDir\loc-visuals.exe"

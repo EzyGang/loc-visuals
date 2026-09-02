@@ -29,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/EzyGang/loc-visuals/main/scripts/in
 irm https://raw.githubusercontent.com/EzyGang/loc-visuals/main/scripts/install.ps1 | iex
 ```
 
-The PowerShell installer verifies the release checksum, installs to `%LOCALAPPDATA%\Programs\loc-visuals\bin`, and adds that directory to the user `PATH` when needed.
+The PowerShell installer verifies the release checksum, copies the executable to `%USERPROFILE%\.local\bin`, and adds that directory to both the persistent user `PATH` and the current PowerShell session. It installs the executable itself rather than a shortcut.
 
 ```powershell
 $env:LOC_VISUALS_VERSION="0.1.1"; $env:LOC_VISUALS_INSTALL_DIR="$HOME\bin"; irm https://raw.githubusercontent.com/EzyGang/loc-visuals/main/scripts/install.ps1 | iex
