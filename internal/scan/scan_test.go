@@ -42,7 +42,7 @@ func TestAnalyzeCountsNonEmptyTextAndSkipsGeneratedContent(t *testing.T) {
 	output := filepath.Join(root, "loc-report.html")
 	writeFixture(t, root, "loc-report.html", "old\nreport\n")
 
-	result, err := Analyze(root, output)
+	result, err := Analyze([]string{root}, output)
 	if err != nil {
 		t.Fatalf("Analyze() error = %v", err)
 	}
@@ -66,13 +66,61 @@ func TestAnalyzeSkipsNonTextFilesByContent(t *testing.T) {
 	writeFixture(t, root, "notes.rlib", "readable text\n")
 	writeFixture(t, root, ".runtime/voice-test-target/debug/deps/libgodot_core.rlib", string([]byte{0xff, 0xfe, 0x01}))
 
-	result, err := Analyze(root, "")
+	result, err := Analyze([]string{root}, "")
 	if err != nil {
 		t.Fatalf("Analyze() error = %v", err)
 	}
 	assertStats(t, result.Categories[Code], Stats{Lines: 2, Files: 2})
 	if result.SkippedFiles != 1 {
 		t.Errorf("SkippedFiles = %d, want 1", result.SkippedFiles)
+	}
+}
+
+func TestAnalyzeAggregatesMultipleRoots(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	sourceRoot := filepath.Join(project, "src")
+	testRoot := filepath.Join(project, "tests")
+	writeFixture(t, project, "src/main.go", "package main\n")
+	writeFixture(t, project, "tests/main.go", "package tests\n")
+
+	result, err := Analyze([]string{sourceRoot, testRoot}, "")
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	assertStats(t, result.Categories[Code], Stats{Lines: 1, Files: 1})
+	assertStats(t, result.Categories[Tests], Stats{Lines: 1, Files: 1})
+	if result.TotalLines != 2 || result.TotalFiles != 2 {
+		t.Errorf("combined totals = %d lines in %d files, want 2 lines in 2 files", result.TotalLines, result.TotalFiles)
+	}
+	if len(result.Roots) != 2 || result.Roots[0].Path != sourceRoot || result.Roots[1].Path != testRoot {
+		t.Errorf("Roots = %+v, want paths [%q %q]", result.Roots, sourceRoot, testRoot)
+	}
+	assertStats(t, result.Roots[0].Categories[Code], Stats{Lines: 1, Files: 1})
+	assertStats(t, result.Roots[1].Categories[Tests], Stats{Lines: 1, Files: 1})
+	if result.Roots[0].TotalLines != 1 || result.Roots[1].TotalLines != 1 {
+		t.Errorf("per-root lines = [%d %d], want [1 1]", result.Roots[0].TotalLines, result.Roots[1].TotalLines)
+	}
+}
+
+func TestAnalyzeDoesNotRescanNestedOrDuplicateRoots(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	nested := filepath.Join(root, "src")
+	writeFixture(t, root, "README.md", "# Project\n")
+	writeFixture(t, root, "src/main.go", "package main\n")
+
+	result, err := Analyze([]string{nested, root, root}, "")
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.TotalFiles != 2 || result.TotalLines != 2 {
+		t.Errorf("totals = %d files and %d lines, want 2 files and 2 lines", result.TotalFiles, result.TotalLines)
+	}
+	if len(result.Roots) != 1 || result.Roots[0].Path != root {
+		t.Errorf("Roots = %+v, want path %q", result.Roots, root)
 	}
 }
 
@@ -109,7 +157,7 @@ func TestWalkFileSkipsUnreadableFile(t *testing.T) {
 		t.Fatalf("Remove() error = %v", err)
 	}
 
-	result := Result{Root: root, Categories: make(map[Category]Stats, 3)}
+	result := newSummary()
 	if err := walkFile(root, "", &result)(path, entries[0], nil); err != nil {
 		t.Fatalf("walkFile() error = %v, want unreadable file to be skipped", err)
 	}

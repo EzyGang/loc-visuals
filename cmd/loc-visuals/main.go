@@ -31,23 +31,14 @@ func run(arguments []string, stdout io.Writer, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	output := flags.String("o", "loc-report.html", "HTML artifact path")
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: loc-visuals [-o report.html] [project]")
+		fmt.Fprintln(stderr, "Usage: loc-visuals [-o report.html] [path ...]")
 		fmt.Fprintln(stderr, "       loc-visuals version")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
-	if flags.NArg() > 1 {
-		flags.Usage()
-		return 2
-	}
-
-	project := "."
-	if flags.NArg() == 1 {
-		project = flags.Arg(0)
-	}
-	result, err := scan.Analyze(project, *output)
+	result, err := scan.Analyze(flags.Args(), *output)
 	if err != nil {
 		fmt.Fprintf(stderr, "loc-visuals: %v\n", err)
 		return 1

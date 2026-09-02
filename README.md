@@ -57,6 +57,14 @@ Choose another output path or project:
 loc-visuals -o artifacts/lines.html ../project
 ```
 
+Scan several folders without scanning their parent directory:
+
+```sh
+loc-visuals -o artifacts/lines.html ./cmd ./internal/scan ./internal/report
+```
+
+Any number of paths can be provided. Duplicate and nested paths are scanned only once. Multi-path reports show combined totals alongside a separate composition breakdown for every selected folder.
+
 Print the installed version:
 
 ```sh

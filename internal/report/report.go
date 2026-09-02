@@ -29,15 +29,28 @@ type categoryView struct {
 	Width      string
 }
 
-type templateData struct {
-	Project      string
-	Root         string
-	Generated    string
+type sourceView struct {
+	Name         string
+	Path         string
 	TotalLines   string
 	TotalFiles   string
 	SkippedFiles string
 	Categories   []categoryView
 	AriaLabel    string
+}
+
+type templateData struct {
+	Project       string
+	SummaryTitle  string
+	RootCount     string
+	MultipleRoots bool
+	Sources       []sourceView
+	Generated     string
+	TotalLines    string
+	TotalFiles    string
+	SkippedFiles  string
+	Categories    []categoryView
+	AriaLabel     string
 }
 
 func Write(result scan.Result, outputPath string) error {
@@ -67,25 +80,61 @@ func Write(result scan.Result, outputPath string) error {
 }
 
 func makeTemplateData(result scan.Result) templateData {
-	categories := makeCategoryViews(result)
+	categories := makeCategoryViews(result.Summary)
+	multipleRoots := len(result.Roots) > 1
+	summaryTitle := "Line distribution"
+	if multipleRoots {
+		summaryTitle = "Combined totals"
+	}
+
+	return templateData{
+		Project:       projectName(result.Roots),
+		SummaryTitle:  summaryTitle,
+		RootCount:     formatNumber(len(result.Roots)),
+		MultipleRoots: multipleRoots,
+		Sources:       makeSourceViews(result.Roots),
+		Generated:     time.Now().Format("2 January 2006, 15:04"),
+		TotalLines:    formatNumber(result.TotalLines),
+		TotalFiles:    formatNumber(result.TotalFiles),
+		SkippedFiles:  formatNumber(result.SkippedFiles),
+		Categories:    categories,
+		AriaLabel:     categoryAriaLabel(categories),
+	}
+}
+
+func projectName(roots []scan.RootResult) string {
+	if len(roots) == 1 {
+		return filepath.Base(roots[0].Path)
+	}
+	return fmt.Sprintf("%d selected paths", len(roots))
+}
+
+func makeSourceViews(roots []scan.RootResult) []sourceView {
+	views := make([]sourceView, 0, len(roots))
+	for _, root := range roots {
+		categories := makeCategoryViews(root.Summary)
+		views = append(views, sourceView{
+			Name:         filepath.Base(root.Path),
+			Path:         root.Path,
+			TotalLines:   formatNumber(root.TotalLines),
+			TotalFiles:   formatNumber(root.TotalFiles),
+			SkippedFiles: formatNumber(root.SkippedFiles),
+			Categories:   categories,
+			AriaLabel:    categoryAriaLabel(categories),
+		})
+	}
+	return views
+}
+
+func categoryAriaLabel(categories []categoryView) string {
 	labels := make([]string, 0, len(categories))
 	for _, category := range categories {
 		labels = append(labels, fmt.Sprintf("%s %s percent", category.Name, category.Percentage))
 	}
-
-	return templateData{
-		Project:      filepath.Base(result.Root),
-		Root:         result.Root,
-		Generated:    time.Now().Format("2 January 2006, 15:04"),
-		TotalLines:   formatNumber(result.TotalLines),
-		TotalFiles:   formatNumber(result.TotalFiles),
-		SkippedFiles: formatNumber(result.SkippedFiles),
-		Categories:   categories,
-		AriaLabel:    strings.Join(labels, ", "),
-	}
+	return strings.Join(labels, ", ")
 }
 
-func makeCategoryViews(result scan.Result) []categoryView {
+func makeCategoryViews(result scan.Summary) []categoryView {
 	definitions := []struct {
 		category scan.Category
 		name     string

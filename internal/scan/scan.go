@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -25,12 +26,21 @@ type Stats struct {
 	Files int
 }
 
-type Result struct {
-	Root         string
+type Summary struct {
 	Categories   map[Category]Stats
 	TotalLines   int
 	TotalFiles   int
 	SkippedFiles int
+}
+
+type RootResult struct {
+	Path string
+	Summary
+}
+
+type Result struct {
+	Roots []RootResult
+	Summary
 }
 
 var ignoredDirectories = map[string]struct{}{
@@ -45,30 +55,103 @@ var ignoredFiles = map[string]struct{}{
 	"poetry.lock": {}, "uv.lock": {}, "yarn.lock": {},
 }
 
-func Analyze(root string, excludedPath string) (Result, error) {
-	absoluteRoot, err := filepath.Abs(root)
-	if err != nil {
-		return Result{}, fmt.Errorf("resolve project path: %w", err)
-	}
-
-	info, err := os.Stat(absoluteRoot)
-	if err != nil {
-		return Result{}, fmt.Errorf("inspect project path: %w", err)
-	}
-	if !info.IsDir() {
-		return Result{}, fmt.Errorf("project path is not a directory: %s", absoluteRoot)
-	}
-
-	result := Result{Root: absoluteRoot, Categories: make(map[Category]Stats, 3)}
-	excluded := cleanAbsolutePath(excludedPath)
-	err = filepath.WalkDir(absoluteRoot, walkFile(absoluteRoot, excluded, &result))
+func Analyze(roots []string, excludedPath string) (Result, error) {
+	resolvedRoots, err := resolveRoots(roots)
 	if err != nil {
 		return Result{}, err
+	}
+
+	result := Result{Summary: newSummary()}
+	excluded := cleanAbsolutePath(excludedPath)
+	for _, root := range resolvedRoots {
+		rootResult := RootResult{Path: root, Summary: newSummary()}
+		if err := filepath.WalkDir(root, walkFile(root, excluded, &rootResult.Summary)); err != nil {
+			return Result{}, err
+		}
+		mergeSummary(&result.Summary, rootResult.Summary)
+		result.Roots = append(result.Roots, rootResult)
 	}
 	return result, nil
 }
 
-func walkFile(root string, excluded string, result *Result) fs.WalkDirFunc {
+func newSummary() Summary {
+	return Summary{Categories: make(map[Category]Stats, 3)}
+}
+
+func mergeSummary(destination *Summary, source Summary) {
+	for category, stats := range source.Categories {
+		combined := destination.Categories[category]
+		combined.Lines += stats.Lines
+		combined.Files += stats.Files
+		destination.Categories[category] = combined
+	}
+	destination.TotalLines += source.TotalLines
+	destination.TotalFiles += source.TotalFiles
+	destination.SkippedFiles += source.SkippedFiles
+}
+
+func resolveRoots(roots []string) ([]string, error) {
+	if len(roots) == 0 {
+		roots = []string{"."}
+	}
+
+	resolved := make([]string, 0, len(roots))
+	for _, root := range roots {
+		absoluteRoot, err := filepath.Abs(root)
+		if err != nil {
+			return nil, fmt.Errorf("resolve project path %s: %w", root, err)
+		}
+		info, err := os.Stat(absoluteRoot)
+		if err != nil {
+			return nil, fmt.Errorf("inspect project path %s: %w", absoluteRoot, err)
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("project path is not a directory: %s", absoluteRoot)
+		}
+
+		duplicate := false
+		for _, existing := range resolved {
+			if samePath(existing, absoluteRoot) {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			resolved = append(resolved, absoluteRoot)
+		}
+	}
+
+	effective := make([]string, 0, len(resolved))
+	for index, candidate := range resolved {
+		covered := false
+		for otherIndex, other := range resolved {
+			if index != otherIndex && pathContains(other, candidate) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			effective = append(effective, candidate)
+		}
+	}
+	return effective, nil
+}
+
+func samePath(left string, right string) bool {
+	left = filepath.Clean(left)
+	right = filepath.Clean(right)
+	return left == right || runtime.GOOS == "windows" && strings.EqualFold(left, right)
+}
+
+func pathContains(parent string, child string) bool {
+	relative, err := filepath.Rel(parent, child)
+	if err != nil || relative == "." {
+		return false
+	}
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+func walkFile(root string, excluded string, result *Summary) fs.WalkDirFunc {
 	return func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if path == root {
@@ -108,7 +191,7 @@ func walkFile(root string, excluded string, result *Result) fs.WalkDirFunc {
 		if err != nil {
 			return fmt.Errorf("resolve relative path for %s: %w", path, err)
 		}
-		category := classify(relative)
+		category := classify(filepath.Join(filepath.Base(root), relative))
 		stats := result.Categories[category]
 		stats.Lines += lines
 		stats.Files++
