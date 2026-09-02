@@ -1,0 +1,154 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Read package version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Read and validate package version
+        id: version
+        shell: bash
+        run: |
+          output="$(go run ./cmd/loc-visuals version)"
+          version="${output#loc-visuals }"
+          if [[ "$version" == "$output" || ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package version must match MAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.asset_os }}-${{ matrix.asset_arch }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            asset_os: linux
+            asset_arch: amd64
+            binary: loc-visuals
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            asset_os: linux
+            asset_arch: arm64
+            binary: loc-visuals
+          - os: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            asset_os: darwin
+            asset_arch: amd64
+            binary: loc-visuals
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            asset_os: darwin
+            asset_arch: arm64
+            binary: loc-visuals
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            asset_os: windows
+            asset_arch: amd64
+            binary: loc-visuals.exe
+          - os: windows-11-arm
+            goos: windows
+            goarch: arm64
+            asset_os: windows
+            asset_arch: arm64
+            binary: loc-visuals.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build release binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir package
+          go build -trimpath -ldflags="-s -w" -o package/${{ matrix.binary }} ./cmd/loc-visuals
+      - name: Package Unix release archive
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p dist
+          tar -C package -czf "dist/loc-visuals-${VERSION}-${{ matrix.asset_os }}-${{ matrix.asset_arch }}.tar.gz" loc-visuals
+      - name: Package Windows release archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path "package/loc-visuals.exe" -DestinationPath "dist/loc-visuals-$env:VERSION-${{ matrix.asset_os }}-${{ matrix.asset_arch }}.zip"
+      - name: Upload release archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.asset_os }}-${{ matrix.asset_arch }}
+          path: dist/loc-visuals-*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Download release archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Add installers and checksums
+        shell: bash
+        run: |
+          cp scripts/install.sh scripts/install.ps1 dist/
+          cd dist
+          sha256sum loc-visuals-* install.sh install.ps1 > SHA256SUMS
+      - name: Create release and attach artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --generate-notes \
+            --title "loc-visuals $TAG"
