@@ -1,13 +1,15 @@
 package scan
 
 import (
-	"bufio"
-	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type Category string
@@ -69,7 +71,14 @@ func Analyze(root string, excludedPath string) (Result, error) {
 func walkFile(root string, excluded string, result *Result) fs.WalkDirFunc {
 	return func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return fmt.Errorf("walk %s: %w", path, walkErr)
+			if path == root {
+				return fmt.Errorf("walk %s: %w", path, walkErr)
+			}
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir
+			}
+			result.SkippedFiles++
+			return nil
 		}
 		if path == excluded {
 			return nil
@@ -87,7 +96,8 @@ func walkFile(root string, excluded string, result *Result) fs.WalkDirFunc {
 
 		lines, binary, err := countLines(path)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", path, err)
+			result.SkippedFiles++
+			return nil
 		}
 		if binary {
 			result.SkippedFiles++
@@ -116,22 +126,54 @@ func countLines(path string) (int, bool, error) {
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	buffer := make([]byte, 64*1024+utf8.UTFMax)
+	buffered := 0
 	lines := 0
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if bytes.IndexByte(line, 0) >= 0 {
-			return 0, true, nil
+	lineHasContent := false
+	for {
+		read, readErr := file.Read(buffer[buffered:])
+		content := buffer[:buffered+read]
+		buffered = 0
+
+		for len(content) > 0 {
+			if !utf8.FullRune(content) {
+				if readErr != nil {
+					return 0, true, nil
+				}
+				buffered = len(content)
+				copy(buffer[:buffered], content)
+				break
+			}
+
+			character, size := utf8.DecodeRune(content)
+			if character == utf8.RuneError && size == 1 || isBinaryControl(character) {
+				return 0, true, nil
+			}
+			if character == '\n' {
+				if lineHasContent {
+					lines++
+				}
+				lineHasContent = false
+			} else if !unicode.IsSpace(character) {
+				lineHasContent = true
+			}
+			content = content[size:]
 		}
-		if len(bytes.TrimSpace(line)) > 0 {
-			lines++
+
+		if readErr != nil {
+			if !errors.Is(readErr, io.EOF) {
+				return 0, false, readErr
+			}
+			if lineHasContent {
+				lines++
+			}
+			return lines, false, nil
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return 0, false, err
-	}
-	return lines, false, nil
+}
+
+func isBinaryControl(character rune) bool {
+	return unicode.IsControl(character) && !unicode.IsSpace(character)
 }
 
 func classify(path string) Category {

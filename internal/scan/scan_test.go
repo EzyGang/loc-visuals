@@ -3,6 +3,7 @@ package scan
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -54,6 +55,66 @@ func TestAnalyzeCountsNonEmptyTextAndSkipsGeneratedContent(t *testing.T) {
 	}
 	if result.SkippedFiles != 2 {
 		t.Errorf("SkippedFiles = %d, want 2", result.SkippedFiles)
+	}
+}
+
+func TestAnalyzeSkipsNonTextFilesByContent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFixture(t, root, "src/main.rs", "fn main() {}\n")
+	writeFixture(t, root, "notes.rlib", "readable text\n")
+	writeFixture(t, root, ".runtime/voice-test-target/debug/deps/libgodot_core.rlib", string([]byte{0xff, 0xfe, 0x01}))
+
+	result, err := Analyze(root, "")
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	assertStats(t, result.Categories[Code], Stats{Lines: 2, Files: 2})
+	if result.SkippedFiles != 1 {
+		t.Errorf("SkippedFiles = %d, want 1", result.SkippedFiles)
+	}
+}
+
+func TestCountLinesHandlesOversizedTextLine(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := filepath.Join(root, "generated.txt")
+	writeFixture(t, root, "generated.txt", strings.Repeat("x", 17*1024*1024)+"\n\nnext\n")
+
+	lines, binary, err := countLines(path)
+	if err != nil {
+		t.Fatalf("countLines() error = %v", err)
+	}
+	if binary {
+		t.Fatal("countLines() classified text as binary")
+	}
+	if lines != 2 {
+		t.Errorf("countLines() = %d, want 2", lines)
+	}
+}
+
+func TestWalkFileSkipsUnreadableFile(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := filepath.Join(root, "vanished.go")
+	writeFixture(t, root, "vanished.go", "package vanished\n")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("ReadDir() error = %v", err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+
+	result := Result{Root: root, Categories: make(map[Category]Stats, 3)}
+	if err := walkFile(root, "", &result)(path, entries[0], nil); err != nil {
+		t.Fatalf("walkFile() error = %v, want unreadable file to be skipped", err)
+	}
+	if result.SkippedFiles != 1 {
+		t.Errorf("SkippedFiles = %d, want 1", result.SkippedFiles)
 	}
 }
 
