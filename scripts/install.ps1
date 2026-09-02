@@ -10,10 +10,19 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw "loc-visuals installer: this script supports Windows only"
 }
 
-$architecture = switch ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()) {
-    "X64" { "amd64" }
-    "Arm64" { "arm64" }
-    default { throw "loc-visuals installer: unsupported architecture" }
+$architectureName = if ($env:PROCESSOR_ARCHITEW6432) {
+    $env:PROCESSOR_ARCHITEW6432
+} else {
+    $env:PROCESSOR_ARCHITECTURE
+}
+if ([string]::IsNullOrWhiteSpace($architectureName)) {
+    throw "loc-visuals installer: could not determine the operating system architecture"
+}
+
+$architecture = switch ($architectureName.ToUpperInvariant()) {
+    "AMD64" { "amd64" }
+    "ARM64" { "arm64" }
+    default { throw "loc-visuals installer: unsupported architecture: $architectureName" }
 }
 
 if ($Version -eq "latest") {

@@ -20,20 +20,19 @@ The installer selects the current operating system and architecture, verifies th
 Set `LOC_VISUALS_VERSION` to install a specific release or `LOC_VISUALS_INSTALL_DIR` to change the destination:
 
 ```sh
-LOC_VISUALS_VERSION=0.1.0 LOC_VISUALS_INSTALL_DIR="$HOME/bin" sh install.sh
+curl -fsSL https://github.com/EzyGang/loc-visuals/releases/latest/download/install.sh | LOC_VISUALS_VERSION=0.1.0 LOC_VISUALS_INSTALL_DIR="$HOME/bin" sh
 ```
 
 ### Windows
 
 ```powershell
-Invoke-WebRequest https://github.com/EzyGang/loc-visuals/releases/latest/download/install.ps1 -OutFile install.ps1
-.\install.ps1
+irm https://github.com/EzyGang/loc-visuals/releases/latest/download/install.ps1 | iex
 ```
 
 The PowerShell installer verifies the release checksum, installs to `%LOCALAPPDATA%\Programs\loc-visuals\bin`, and adds that directory to the user `PATH` when needed.
 
 ```powershell
-.\install.ps1 -Version 0.1.0 -InstallDir "$HOME\bin"
+$env:LOC_VISUALS_VERSION="0.1.0"; $env:LOC_VISUALS_INSTALL_DIR="$HOME\bin"; irm https://github.com/EzyGang/loc-visuals/releases/latest/download/install.ps1 | iex
 ```
 
 ### Build from source
@@ -41,9 +40,7 @@ The PowerShell installer verifies the release checksum, installs to `%LOCALAPPDA
 Go 1.25 or newer is required.
 
 ```sh
-git clone https://github.com/EzyGang/loc-visuals.git
-cd loc-visuals
-go build -o bin/loc-visuals ./cmd/loc-visuals
+git clone https://github.com/EzyGang/loc-visuals.git && cd loc-visuals && go build -o bin/loc-visuals ./cmd/loc-visuals
 ```
 
 ## Usage
@@ -82,10 +79,7 @@ Dependencies, caches, build output, lock files, minified files, source maps, sym
 ## Development
 
 ```sh
-go test ./...
-go vet ./...
-go build -o bin/loc-visuals ./cmd/loc-visuals
-./bin/loc-visuals -o /tmp/loc-report.html .
+go test ./... && go vet ./... && go build -o bin/loc-visuals ./cmd/loc-visuals && ./bin/loc-visuals -o /tmp/loc-report.html .
 ```
 
 CI runs tests, vet, and builds on Linux, macOS, and Windows.
